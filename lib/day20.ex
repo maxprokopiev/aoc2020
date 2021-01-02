@@ -20,13 +20,93 @@ defmodule Day20 do
     Enum.reduce [jigsaw[{0, 0}], jigsaw[{0, size - 1}], jigsaw[{size - 1, 0}], jigsaw[{size - 1, size - 1}]], 1, fn {tile_id, _}, acc -> tile_id * acc end
   end
 
+  def solve2(tiles) do
+    size = get_dimensions(tiles)
+
+    versions = Enum.reduce tiles, %{}, fn {tile_id, tile}, acc ->
+      Map.put(acc, tile_id, rotations(tile))
+    end
+
+    corner_tiles = find_valid_tiles(tiles, versions, [:top, :left])
+
+    tile_id = hd(Map.keys(corner_tiles))
+    tile = hd(corner_tiles[tile_id])
+
+    jigsaw = build(
+      Map.put(prepare_jigsaw(tiles), {0, 0}, {tile_id, tile}),
+      size,
+      List.delete(Map.keys(tiles), tile_id),
+      versions
+    )
+
+    image = convert_to_array(jigsaw, size) |> remove_borders() |> build_image()
+    {num_of_monsters, with_monsters} = Enum.reduce_while rotations(image), 0, fn with_monsters, _ ->
+      width = length(hd(with_monsters))
+      num_of_monsters = Enum.reduce Enum.chunk_every(with_monsters, 3, 1, :discard), 0, fn [x, y, z], acc ->
+        acc + Enum.count 0..(width - 21), fn offset ->
+          x_coords = Enum.map [18], fn e -> e + offset end
+          y_coords = Enum.map [0, 5, 6, 11, 12, 17, 18, 19], fn e -> e + offset end
+          z_coords = Enum.map [1, 4, 7, 10, 13, 16], fn e -> e + offset end
+
+          Enum.all?(x_coords, fn i -> Enum.at(x, i) == "#" end)
+          &&
+          Enum.all?(y_coords, fn i -> Enum.at(y, i) == "#" end)
+          &&
+          Enum.all?(z_coords, fn i -> Enum.at(z, i) == "#" end)
+        end
+      end
+      if num_of_monsters > 0 do
+        {:halt, {num_of_monsters, with_monsters}}
+      else
+        {:cont, 0}
+      end
+    end
+
+    count(with_monsters, "#") - num_of_monsters*15
+  end
+
+  def count(jigsaw, char) do
+    Enum.reduce jigsaw, 0, fn row, acc ->
+      acc + Enum.count(row, fn e -> e == char end)
+    end
+  end
+
+  def build_image(jigsaw) do
+    Enum.reduce jigsaw, [], fn row, image ->
+      rows = for i <- 0..(length(hd(row)) - 1), into: [] do
+        Enum.reduce row, [], fn tile, acc ->
+          acc ++ Enum.at(tile, i)
+        end
+      end
+      image ++ rows
+    end
+  end
+
+  def remove_borders(jigsaw) do
+    Enum.map jigsaw, fn tiles ->
+      Enum.map tiles, &crop/1
+    end
+  end
+
+  def crop(tile) do
+    Enum.map (List.delete_at(tile, 0) |> List.delete_at(length(tile) - 2)), fn row ->
+      List.delete_at(row, 0) |> List.delete_at(length(row) - 2)
+    end
+  end
+
+  def convert_to_array(jigsaw, size) do
+    for i <- 0..(size - 1), into: [] do
+      for j <- 0..(size - 1), into: [] do
+        {_, tile} = jigsaw[{i, j}]
+        tile
+      end
+    end
+  end
+
   def prepare_jigsaw(tiles) do
     dimensions = get_dimensions(tiles)
 
     for i <- 0..(dimensions - 1), j <- 0..(dimensions - 1), into: %{} do
-      possibilities = Enum.reduce tiles, [], fn {id, _}, acc ->
-        acc ++ [id]
-      end
       {{i, j}, nil}
     end
   end
@@ -113,57 +193,6 @@ defmodule Day20 do
 
   def cant_use?(tile, versions, direction) do
     Enum.all?(versions, fn other_tile -> !fits?(tile, other_tile, direction) end)
-  end
-
-  def print(jigsaw, dimensions \\ 3) do
-    for i <- 0..(dimensions - 1), into: [] do
-      for j <- 0..(dimensions - 1), into: [] do
-        if jigsaw[{i,j}] do
-          {tile_id, _} = jigsaw[{i, j}]
-          Integer.to_string(tile_id)
-        else
-          "-"
-        end
-      end
-    end
-  end
-
-  def discard_picked(jigsaw, coords_to_remove, pick) do
-    Enum.reduce Map.keys(jigsaw), jigsaw, fn coords, new_jigsaw ->
-      if coords == coords_to_remove do
-        Map.put(new_jigsaw, coords, List.delete(new_jigsaw[coords], pick))
-      else
-        new_jigsaw
-      end
-    end
-  end
-
-  def remove_picked(jigsaw, coords_to_skip, pick) do
-    Enum.reduce Map.keys(jigsaw), jigsaw, fn coords, new_jigsaw ->
-      if coords == coords_to_skip do
-        new_jigsaw
-      else
-        Map.put(new_jigsaw, coords, List.delete(new_jigsaw[coords], pick))
-      end
-    end
-  end
-
-  def reduce_neighbours(pick, jigsaw, directions) do
-    r = Enum.reduce_while directions, jigsaw, fn {dir, coords}, new_jigsaw ->
-      valid_tiles = Enum.filter new_jigsaw[coords], fn tile -> fits?(pick, tile, dir) end
-
-      if valid_tiles == [] do
-        {:halt, :error}
-      else
-        {:cont, Map.put(new_jigsaw, coords, valid_tiles)}
-      end
-    end
-
-    if r == :error, do: {:error, jigsaw}, else: {:ok, r}
-  end
-
-  def get_directions(jigsaw, i, j) do
-    Enum.filter [{:top, {i - 1, j}}, {:left, {i, j - 1}}, {:right, {i, j + 1}}, {:bottom, {i + 1, j}}], fn {_, coords} -> jigsaw[coords] != nil end
   end
 
   # tile2
