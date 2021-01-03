@@ -1,80 +1,83 @@
 defmodule Day23 do
   def solve(s) do
-    cups = String.graphemes(s) |> Enum.map(&String.to_integer/1)
-    collect_labels(play(cups, hd(cups), 100, 1)) |> Enum.join
+    input = String.graphemes(s) |> Enum.map(&String.to_integer/1)
+
+    cups = :atomics.new(length(input), [])
+
+    input
+    |> Enum.chunk_every(2, 1)
+    |> Enum.each(fn
+      [label, next] -> :atomics.put(cups, label, next)
+      [label] -> :atomics.put(cups, label, hd(input))
+    end)
+
+    play(cups, hd(input), 100, Enum.max(input))
+    collect(cups, length(input))
   end
 
   def solve2(s) do
-    input = String.graphemes(s) |> Enum.map(&String.to_integer/1)
-    cups = input ++ Enum.to_list((Enum.max(input) + 1)..1000000)
-    new_cups = play(cups, hd(cups), 10000000, 1)
-    Enum.at(new_cups, index_of(new_cups, 1) + 1)
+    input = (String.graphemes(s) |> Enum.map(&String.to_integer/1)) ++ Enum.to_list(10..1000000)
+
+    cups = :atomics.new(length(input), [])
+
+    input
+    |> Enum.chunk_every(2, 1)
+    |> Enum.each(fn
+      [label, next] -> :atomics.put(cups, label, next)
+      [label] -> :atomics.put(cups, label, hd(input))
+    end)
+
+    play(cups, hd(input), 10000000, Enum.max(input))
+    first = :atomics.get(cups, 1)
+    second = :atomics.get(cups, first)
+
+    first * second
   end
 
-  def collect_labels(cups) do
-    one_at = index_of(cups, 1)
-    Enum.slice(cups, (one_at + 1)..(length(cups) - 1)) ++ Enum.slice(cups, 0..(one_at - 1))
+  def collect(cups, size) do
+    {_, c} = Enum.reduce 1..(size - 1), {1, []}, fn _, {i, acc} ->
+      next = :atomics.get(cups, i)
+      {next, acc ++ [next]}
+    end
+    c |> Enum.join
   end
 
-  def play(cups, current_cup, rounds, round) do
-    if round > rounds do
-      cups
-    else
-      {new_cups, new_current_cup} = move(cups, current_cup)
-      play(new_cups, new_current_cup, rounds, round + 1)
+  def play(cups, current_cup, rounds, max) do
+    Enum.reduce 1..rounds, current_cup, fn _, c ->
+      move(cups, c, max)
     end
   end
 
-  def move(cups, current_cup) do
-    {pickup, new_cups} = pick_cups(cups, current_cup)
-    destination_cup = select_destination_cup(new_cups, pickup, current_cup - 1)
-    cups2 = place_cups(new_cups, pickup, destination_cup)
-    {cups2, select_new_current_cup(cups2, current_cup)}
-  end
+  def move(cups, current_cup, max) do
+    pickup = [_, _, third] = pick_cups(cups, current_cup)
+    destination_cup = select_destination_cup(current_cup, pickup, max)
 
-  def select_new_current_cup(cups, current_cup) do
-    Enum.at(cups, normalize_index(cups, index_of(cups, current_cup) + 1))
-  end
+    third_next = :atomics.get(cups, third)
+    current_next = :atomics.get(cups, current_cup)
+    dest_next = :atomics.get(cups, destination_cup)
 
-  def place_cups(cups, pickup, destination_cup) do
-    List.insert_at(cups, index_of(cups, destination_cup) + 1, pickup) |> List.flatten
+    :atomics.put(cups, current_cup, third_next)
+    :atomics.put(cups, third, dest_next)
+    :atomics.put(cups, destination_cup, current_next)
+
+    third_next
   end
 
   def pick_cups(cups, current_cup) do
-    from = normalize_index(cups, index_of(cups, current_cup) + 1)
-    to = normalize_index(cups, index_of(cups, current_cup) + 3)
+    a = :atomics.get(cups, current_cup)
+    b = :atomics.get(cups, a)
+    c = :atomics.get(cups, b)
 
-    pickup = if from > to do
-      Enum.slice(cups, from..(length(cups) - 1)) ++ Enum.slice(cups, 0..to)
+    [a, b, c]
+  end
+
+  def select_destination_cup(current_cup, pickup, max) do
+    destination = if current_cup == 1, do: max, else: current_cup - 1
+
+    if destination in pickup do
+      select_destination_cup(destination, pickup, max)
     else
-      Enum.slice(cups, from..to)
-    end
-
-    {pickup, remove_pickup(cups, pickup)}
-  end
-
-  def normalize_index(cups, index) do
-    Integer.mod(index, length(cups))
-  end
-
-  def index_of(cups, label) do
-    Enum.find_index(cups, fn e -> e == label end)
-  end
-
-  def remove_pickup(cups, pickup) do
-    Enum.reduce pickup, cups, fn p, new_cups ->
-      List.delete(new_cups, p)
-    end
-  end
-
-  def select_destination_cup(cups, pickup, destination) do
-    cond do
-      destination < Enum.min(cups) ->
-        Enum.max(cups)
-      destination in pickup ->
-        select_destination_cup(cups, pickup, destination - 1)
-      true ->
-        destination
+      destination
     end
   end
 end

@@ -12,4 +12,8 @@ defmodule Day23Test do
   test "sample part2" do
     assert Day23.solve2("389125467") == 149245887792
   end
+
+  test "puzzle part2" do
+    assert Day23.solve2("186524973") == 111080192688
+  end
 end
